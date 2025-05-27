@@ -1,0 +1,15 @@
+name: 'Setup Common Env'
+description: 'Setup Common Env'
+
+inputs:
+  env-file:
+    required: false
+    default: ./.github/.env.common
+
+runs:
+  using: "composite"
+
+  steps:
+    - name: Add Environment Variables
+      run: sed "" ${{ inputs.env-file }} >> $GITHUB_ENV
+      shell: bash

@@ -1,0 +1,79 @@
+# 動作検証用。プルリクのコメントに「run build」がついた場合に起動
+
+on:
+  issue_comment:
+    types: [ created ]
+
+jobs:
+
+  prepare:
+    runs-on: ubuntu-latest
+
+    outputs:
+      triggered: ${{ steps.check.outputs.triggered }}
+      head_ref: ${{ steps.get_head_ref.outputs.head_ref }}
+
+    steps:
+
+    # コメントにキーワードが含まれるかを判定
+    - name: Pull Request Comment Trigger
+      id: check
+      uses: Khan/pull-request-comment-trigger@1.0.0
+      with:
+        trigger: 'run build'
+
+    # ビルド対象のブランチ名を取得
+    - name: Get Head
+      id: get_head_ref
+      run: |
+        res=$(curl -X GET \
+              -H "Content-Type: application/json" \
+              -H "Authorization: token ${{ secrets.CI_PAT }}" \
+              https://api.github.com/repos/${{ github.repository }}/pulls/${{ github.event.issue.number }})
+        head_ref=$(echo $res | tr -d '[:cntrl:]' | jq -r '.head.ref')
+        echo "::set-output name=head_ref::${head_ref}"
+
+
+  build:
+    needs: prepare
+    runs-on: macos-latest
+
+    env:
+      TZ: 'Asia/Tokyo'
+
+    # prepareジョブでの判定結果がtrueのときのみ実行
+    if: needs.prepare.outputs.triggered == 'true'
+
+    steps:
+
+      # Xcode12.0.1が使用不可なので、暫定で12.4を使う
+      - name: Select Xcode version
+        run: sudo xcode-select -s '/Applications/Xcode_12.4.app/Contents/Developer'
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      # iPadリポジトリをチェックアウト
+      - uses: actions/checkout@v2
+        with:
+          ref: ${{ needs.prepare.outputs.head_ref }}
+          path: ipad
+          fetch-depth: 0
+
+      # Cocoa Pods
+      - name: Cache CocoaPods files
+        uses: actions/cache@v1
+        with:
+           path: Pods
+           key: ${{ runner.os }}-pods-${{ hashFiles('Podfile.lock') }}
+           restore-keys: |
+             ${{ runner.os }}-pods-
+
+      - name: Pod Install
+        run: |
+          cd ipad
+          pod install
+
+      # デバッグビルド
+      - name: Build
+        working-directory: ./ipad
+        run: xcodebuild -workspace SpiderPlus.xcworkspace -scheme SpiderPlusDevelopment -configuration Debug -sdk iphonesimulator build

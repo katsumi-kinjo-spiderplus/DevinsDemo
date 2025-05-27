@@ -1,0 +1,57 @@
+name: 'Generate SpiderPlus.xcodeproj'
+description: 'Generate SpiderPlus.xcodeproj'
+
+inputs:
+  ref:
+    description: チェックアウト対象ブランチ名
+    type: string
+    required: false
+    default: ''
+
+runs:
+  using: "composite"
+  steps:
+    # リポジトリのチェックアウト
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ inputs.ref }}
+        fetch-depth: 0
+
+    # 共通の環境変数セット
+    - name: Set Environment Variables
+      id: set-up-env
+      uses: ./.github/actions/set-up-env
+
+    # Xcodeのバージョン出力
+    - name: Show Xcode version
+      run: xcodebuild -version
+      shell: bash
+
+    # Gemsのキャッシュ
+    - name: Cache Gems
+      uses: actions/cache@v4
+      with:
+        path: vendor/bundle
+        key: ${{ runner.os }}-gems-${{ hashFiles('**/Gemfile.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-gems-
+
+    # Gemsのインストール
+    - name: Install Bundled Gems
+      run: bundle config set --local path 'vendor/bundle'
+      shell: bash
+
+    # Mintで管理しているライブラリのキャッシュ
+    - name: Cache Mint packages
+      uses: actions/cache@v4
+      with:
+        path: mint
+        key: ${{ runner.os }}-mint-${{ hashFiles('**/Mintfile') }}
+        restore-keys: |
+          ${{ runner.os }}-mint-
+
+    # プロジェクトファイルの生成
+    - name: Generate Xcode project with XcodeGen
+      run: xcodegen generate
+      shell: bash

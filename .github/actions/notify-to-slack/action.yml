@@ -1,0 +1,81 @@
+name: Notify Action to Slack
+inputs:
+  slack_webhook_url:
+    description: 'Slack webhook URL'
+    required: true
+  message:
+    description: 'Message to send to Slack'
+    required: false
+    default: ''
+  status:
+    description: 'status'
+    required: true
+    default: 'failure'
+runs:
+  using: composite
+  steps:
+    - name: Set Slack status
+      shell: bash
+      run: |
+        if [ "${{ inputs.status }}" = "success" ]; then
+          echo "SLACK_STATUS_COLOR=good" >> $GITHUB_ENV
+          echo "STATUS_WORD=成功" >> $GITHUB_ENV
+        else
+          echo "SLACK_STATUS_COLOR=danger" >> $GITHUB_ENV
+          echo "STATUS_WORD=失敗" >> $GITHUB_ENV
+        fi
+
+    - name: Notify to Slack channel
+      shell: bash
+      run: |
+         REPOSITORY_NAME=$(echo "${{ github.repository }}" | cut -d'/' -f2)
+         SLACK_WEBHOOK_URL=${{ inputs.slack_webhook_url }}
+         SLACK_USERNAME="GitHub Actions"
+         SLACK_TITLE="${REPOSITORY_NAME}のGithub Actions Workflowが${{ env.STATUS_WORD }}しました"
+         SLACK_ICON="https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png"
+         SLACK_COLOR=${{ env.SLACK_STATUS_COLOR }}
+         SLACK_MESSAGE=${{ inputs.message }}
+         ACTION_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+         EVENT_TYPE="${{ github.event_name }}"
+         REF="${{ github.ref }}"
+         COMMIT="${{ github.sha }}"
+         COMMIT_URL="https://github.com/${{ github.repository }}/commit/${{ github.sha }}"
+         WORKFLOW_NAME="${{ github.workflow }}"
+
+         curl -X POST -H 'Content-type: application/json' --data "{
+            \"username\": \"${SLACK_USERNAME}\",
+            \"icon_url\": \"${SLACK_ICON}\",
+            \"attachments\": [
+              {
+                \"color\": \"${SLACK_COLOR}\",
+                \"title\": \"${SLACK_TITLE}\",
+                \"fields\": [
+                  {
+                    \"title\": \"Ref\",
+                    \"value\": \"${REF}\",
+                    \"short\": true
+                  },
+                  {
+                    \"title\": \"Event Type\",
+                    \"value\": \"${EVENT_TYPE}\",
+                    \"short\": true
+                  },
+                  {
+                    \"title\": \"Message\",
+                    \"value\": \"${SLACK_MESSAGE}\",
+                    \"short\": true
+                  },
+                  {
+                    \"title\": \"Actions URL\",
+                    \"value\": \"<${ACTION_URL}|${WORKFLOW_NAME}>\",
+                    \"short\": true
+                  },
+                  {
+                    \"title\": \"Commit\",
+                    \"value\": \"<${COMMIT_URL}|${COMMIT}>\",
+                    \"short\": true
+                  }
+                ]
+              }
+            ]
+         }" $SLACK_WEBHOOK_URL

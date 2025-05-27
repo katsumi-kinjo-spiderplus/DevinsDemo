@@ -1,0 +1,91 @@
+name: 開発版アプリのTestFlightアップロード用ワークフロー(fastlane)
+on:
+   workflow_dispatch:
+   workflow_call:
+    inputs:
+      ref:
+        description: チェックアウト対象ブランチ名
+        type: string
+        required: false
+        default: ''
+      testers:
+        description: 外部テスターのID配列
+        type: string
+        required: false
+      changelog:
+        description: TestFlightのテスト内容
+        type: string
+        required: false
+
+jobs:
+  testFlightUpload:
+    # MacStudioマシンでselfhostランナー実行するための設定
+    runs-on: [self-hosted, MacStudio]
+    timeout-minutes: 60
+    env:
+      Product_IPA_NAME: "SpiderPlus.ipa"
+    steps:
+      # リポジトリのチェックアウト
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # プロジェクトファイルの生成
+      - name: Generate SpiderPlus.xcodeproj
+        uses: ./.github/actions/generate-xcodeproj
+        with:
+          ref: ${{ inputs.ref }}
+
+      # ビルド番号のインクリメント
+      - name: Run Fastlane - Increment build number for TestFlight.
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_CONTENT: ${{ secrets.ASC_KEY_CONTENT }}
+        run: fastlane increment_build_number_for_testflight
+
+      # ビルド　& Archive
+      - name: Xcode build Archive
+        run: set -o pipefail &&
+          xcodebuild
+          -configuration SPDev_Release
+          -scheme SpiderPlusDevelopment
+          archive
+          -archivePath .
+          -destination generic/platform=iOS
+          -allowProvisioningUpdates
+          
+      # Build IPA
+      - name: Build IPA
+        run: set -o pipefail &&        
+          xcodebuild
+          -allowProvisioningUpdates
+          -exportArchive 
+          -archivePath ../SPIDERPLUS-ipad.xcarchive
+          -exportOptionsPlist ./tools/ExportOptions/develop/TestFlight/ExportOptions.plist
+          -exportPath .
+
+      # 開発版アプリのテストフライトアップロード
+      - name: Run Fastlane - dev_upload_to_testflight
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID_APPMGR }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID_APPMGR }}
+          ASC_KEY_CONTENT: ${{ secrets.ASC_KEY_CONTENT_APPMGR }}
+          REPOSITORY_NAME: "${GITHUB_REPOSITORY#${GITHUB_REPOSITORY_OWNER}/}"
+          SLACK_URL: ${{ secrets.SLACK_INCOMING_WEBHOOK_URL_FOR_TESTFLIGHT }}
+          Product_IPA_NAME: ${{ env.Product_IPA_NAME }}
+          GitHubActionRunURL: "${{ github.event.repository.html_url }}/actions/runs/${{ github.run_id }}"
+          TESTERS: ${{ inputs.testers }}
+          CHANGELOG: ${{ inputs.changelog }}
+        run: |
+          # env.CHANGELOGが未定義のときは通常のテストフライト配信
+          if [ -z ${{ env.CHANGELOG }} ]; then
+            fastlane ios dev_upload_to_testflight
+            echo "fastlane dev_upload_to_testflight"
+          else
+            fastlane ios dev_upload_to_testflight_with_testers
+            echo "fastlane dev_upload_to_testflight_with_testers"
+            echo "TESTERS: ${{ env.TESTERS }}"
+            echo "CHANGELOG: ${{ env.CHANGELOG }}"
+          fi

@@ -1,0 +1,48 @@
+# developブランチへのプッシュで起動
+# チェックアウトしてからscpして転送先サーバでssh実行
+
+name: Push Develop
+
+on:
+  push:
+    branches:
+      - develop
+
+jobs:
+
+  build:
+    runs-on: ubuntu-latest 
+
+    env:
+      TZ: 'Asia/Tokyo'
+
+    steps:
+
+    # iPadリポジトリをチェックアウト
+    - uses: actions/checkout@v2
+    - name: commit manifests and push
+      run: ls
+    - name: scp key passphrase
+      uses: appleboy/scp-action@master
+      env:
+        HOST: ${{ secrets.HOST }}
+        USERNAME: ${{ secrets.USERNAME }}
+        KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        PASSPHRASE: ${{ secrets.PASSPHRASE }}
+        PORT: ${{ secrets.PORT }}
+      with:
+        # 転送元のファイル転送したいフォルダやpathを指定
+        source: "./tools/"
+        # 転送先のPATH(踏み台サーバ)
+        target: "/home/t-inagaki/"
+      
+    - name: ssh key passphrase
+      uses: appleboy/ssh-action@master
+      with:
+        host: ${{ secrets.HOST }}
+        username: ${{ secrets.USERNAME }}
+        key: ${{ secrets.SSH_PRIVATE_KEY }}
+        port: ${{ secrets.PORT }}
+        passphrase: ${{ secrets.PASSPHRASE }}
+        #scpのデータ転送テスト
+        script: scp -r tools kf@demo.spider-net.jp:/tmp

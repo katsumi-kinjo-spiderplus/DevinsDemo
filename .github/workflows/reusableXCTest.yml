@@ -1,0 +1,120 @@
+name: Reusable XCTest (self-hosted)
+on:
+  #再利用可能なワークフロー指定
+  workflow_call:
+    inputs:
+      configuration:
+        description: Configration
+        type: string
+        required: false
+        default: SPDev_Debug
+      scheme:
+        description: scheme
+        required: false
+        type: string
+        default: SpiderPlusDevelopment
+      destination:
+        description: destination
+        required: false
+        type: string
+        default: platform=iOS Simulator,OS=17.2,name=iPad Pro (12.9-inch) (6th generation)
+
+jobs:
+  Xcode_XCTest:
+    # MacStudioマシンでselfhostランナー実行するための設定
+    runs-on: [self-hosted, MacStudio]
+    timeout-minutes: 60
+    env:
+      MINT_PATH: mint/lib
+      MINT_LINK_PATH: mint/bin
+      CodeblocksStr: \`\`\`
+      AppFileName: "SpiderPlus.app"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+            fetch-depth: 0
+
+      # プロジェクトファイルの生成
+      - name: Generate SpiderPlus.xcodeproj
+        uses: ./.github/actions/generate-xcodeproj
+        with:
+          ref: ${{ github.head_ref }}
+
+      - name: bundle install
+        run:
+          bundle install
+
+      # PR時の修正行数チェック、PRタイトルチェックのためのdanger実行
+      - name: exec danger preBuild
+        env:
+          DANGER_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run:
+          bundle exec danger --dangerfile=Dangerfile.preBuild --danger_id=preBuild
+          
+      # x86_64のみでしかビルドできないフレームワークを利用しているためx86_64アーキテクチャでクリーンビルド
+      - name: x86_64によるクリーンビルド
+        run:
+          arch -x86_64 xcodebuild 
+          -configuration ${{ inputs.configuration }}
+          -scheme ${{ inputs.scheme }} 
+          -derivedDataPath DerivedData
+          clean build
+
+      # PR時の単体テストの実行
+      - name: Xcode test
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        run:
+          xcodebuild ARCHS=x86_64 test
+          -arch=x86_64
+          -only-testing SpiderPlusTests
+          -configuration ${{ inputs.configuration }}
+          -scheme ${{ inputs.scheme }}
+          -destination '${{ inputs.destination }}'
+          -parallel-testing-enabled NO
+          -resultBundlePath TestResults
+          -derivedDataPath DerivedData
+
+      # 手動実行による単体テストの実行
+      - name: Xcode test (non-PR)
+        if: github.event_name != 'pull_request'
+        run:
+          xcodebuild ARCHS=x86_64 test
+          -arch=x86_64
+          -only-testing SpiderPlusTests
+          -configuration ${{ inputs.configuration }}
+          -scheme ${{ inputs.scheme }}
+          -destination '${{ inputs.destination }}'
+          -parallel-testing-enabled NO
+          -resultBundlePath TestResults
+          -derivedDataPath DerivedData
+
+      # XCTest実行時のビルドビルドワーニングチェックのためのdanger実行
+      - name: exec danger postBuild
+        env:
+          DANGER_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run:
+          bundle exec danger --dangerfile=Dangerfile.postBuild --danger_id=postBuild
+
+      # プロジェクト全体のビルドワーニング、エラー数取得のためのdanger実行
+      - name: exec danger postBuild_getAllWarnnings
+        env:
+          DANGER_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run:
+          bundle exec danger --dangerfile=Dangerfile.postBuild_getAllWarnnings --danger_id=postBuild_getAllWarnnings
+      - name: コードカバレッジデータをPRコメント用加工してファイル出力
+        run: |
+         echo "## coverage summary" >> coverage.log
+         echo "${{ env.CodeblocksStr }}" >> coverage.log
+         xcrun xccov view --report TestResults.xcresult --only-targets > tmp_coverage.log
+         head -n 2 tmp_coverage.log >> coverage.log
+         grep ${{ env.AppFileName }} tmp_coverage.log >> coverage.log
+         echo "${{ env.CodeblocksStr }}" >> coverage.log
+          
+      - name: PRコメントにCovarage summary出力する
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          header: coverage-summary
+          path: coverage.log

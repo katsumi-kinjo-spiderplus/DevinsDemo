@@ -1,0 +1,52 @@
+name: Reusable Checkout (self-hosted)
+on:
+  #再利用可能なワークフロー指定
+  workflow_call:
+jobs:
+  checkout:
+    # MacStudioマシンでselfhostランナー実行するための設定
+    runs-on: [self-hosted, MacStudio]
+    timeout-minutes: 60
+
+    env:
+      MINT_PATH: mint/lib
+      MINT_LINK_PATH: mint/bin
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+            fetch-depth: 0
+
+      # 共通の環境変数セット
+      - name: Set Environment Variables
+        id: set-up-env
+        uses: ./.github/actions/set-up-env
+
+      # Xcodeのバージョン出力
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      # Gemsのキャッシュ
+      - name: Cache Gems
+        uses: actions/cache@v4
+        with:
+          path: vendor/bundle
+          key: ${{ runner.os }}-gems-${{ hashFiles('**/Gemfile.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-gems-
+      # Gemsのインストール
+      - name: Install Bundled Gems
+        run: |
+         bundle config set --local path 'vendor/bundle'
+
+      # Mintで管理しているライブラリのキャッシュ
+      - name: Cache Mint packages
+        uses: actions/cache@v4
+        with:
+          path: mint
+          key: ${{ runner.os }}-mint-${{ hashFiles('**/Mintfile') }}
+          restore-keys: |
+            ${{ runner.os }}-mint-
+      # プロジェクトファイルの生成
+      - name: Generate Xcode project with XcodeGen
+        run: mint run yonaskolb/XcodeGen@2.24.0

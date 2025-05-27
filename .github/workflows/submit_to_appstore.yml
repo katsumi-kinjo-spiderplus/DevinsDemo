@@ -1,0 +1,80 @@
+name: AppStore申請ワークフロー(fastlane)
+on:
+   pull_request:
+    branches:
+      - master
+    types: [closed]
+   workflow_dispatch:
+   workflow_call:
+    inputs:
+      ref:
+        description: チェックアウト対象ブランチ名
+        type: string
+        required: false
+        default: 'master'
+
+concurrency:
+  concurrency_workflow
+
+jobs:
+  testFlightUpload:
+    # MacStudioマシンでselfhostランナー実行するための設定
+    runs-on: [self-hosted, MacStudio]
+    timeout-minutes: 60
+    env:
+      MINT_PATH: mint/lib
+      MINT_LINK_PATH: mint/bin
+      Product_IPA_NAME: "SpiderPlus.ipa"
+    # 手動実行はデフォルトブランチでのみ実行可能 or masterブランチへのマージ後に'AppStore申請ワークフロー発火'ラベル有りのとき発動
+    if: |
+       github.event_name == 'workflow_dispatch'
+       || github.ref_name == github.event.repository.default_branch
+          && contains(github.event.pull_request.labels.*.name, 'AppStore申請ワークフロー発火')
+          && github.event.pull_request.merged == true
+
+    steps:
+      # リポジトリのチェックアウト
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+         ref: ${{ inputs.ref }}
+         fetch-depth: 0
+
+      # プロジェクトファイルの生成
+      - name: Generate SpiderPlus.xcodeproj
+        uses: ./.github/actions/generate-xcodeproj
+        with:
+          ref: ${{ inputs.ref }}
+
+      # ビルド　& Archive
+      - name: Xcode build Archive
+        run: set -o pipefail &&
+          xcodebuild
+          -configuration SP_Release
+          -scheme "SpiderPlus(Release)" 
+          archive
+          -archivePath .
+          -destination generic/platform=iOS
+          -allowProvisioningUpdates
+          
+      # Build IPA
+      - name: Build IPA
+        run: set -o pipefail &&        
+          xcodebuild
+          -allowProvisioningUpdates
+          -exportArchive 
+          -archivePath ../SPIDERPLUS-ipad.xcarchive
+          -exportOptionsPlist ./tools/ExportOptions/develop/TestFlight/ExportOptions.plist
+          -exportPath .
+
+      # submit_appstore_review 
+      - name: Run Fastlane - submit_appstore_review
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID_APPMGR }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID_APPMGR }}
+          ASC_KEY_CONTENT: ${{ secrets.ASC_KEY_CONTENT_APPMGR }}
+          REPOSITORY_NAME: "${GITHUB_REPOSITORY#${GITHUB_REPOSITORY_OWNER}/}"
+          SLACK_URL: ${{ secrets.SLACK_INCOMING_WEBHOOK_URL_FOR_TESTFLIGHT }}
+          Product_IPA_NAME: ${{ env.Product_IPA_NAME }}
+          GitHubActionRunURL: "${{ github.event.repository.html_url }}/actions/runs/${{ github.run_id }}"
+        run: fastlane submit_appstore_review

@@ -1,0 +1,19 @@
+name: Auto assign
+
+on:
+  pull_request:
+    types: opened
+
+jobs:
+  assign:
+    if: endsWith(github.actor, '-spiderplus')
+    runs-on: ubuntu-latest
+    steps:
+    - name: Assign reviewer
+      if: (github.event.pull_request.draft == false)
+      run: |
+          curl -X POST \
+          -H "Accept: application/vnd.github.v3+json" \
+          -H "Authorization: Bearer ${{ secrets.CI_PAT }}" \
+          -d "{ \"team_reviewers\": [\"ios\"] }" \
+          https://api.github.com/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/requested_reviewers

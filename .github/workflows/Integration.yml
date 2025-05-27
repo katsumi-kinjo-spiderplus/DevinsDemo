@@ -1,0 +1,109 @@
+name: self-hosted App build Archive SPIDERPLUS-ipad
+on: 
+  push:
+    branches:
+      - develop
+      - release
+  workflow_dispatch:
+
+jobs:
+  build_with_signing:
+    # MacStudioマシンでselfhostランナー実行するための設定
+    runs-on: [self-hosted, MacStudio]
+    timeout-minutes: 60
+    
+    env:
+      MINT_PATH: mint/lib
+      MINT_LINK_PATH: mint/bin
+      Product_IPA_NAME: "SpiderPlus.ipa"
+      IPA_NAME: "SpiderPlusDevelopment.ipa"
+      BRANCH_NAME: ${{ github.head_ref || github.ref_name }} 
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+         fetch-depth: 0
+
+      # プロジェクトファイルの生成
+      - name: Generate SpiderPlus.xcodeproj
+        uses: ./.github/actions/generate-xcodeproj
+        with:
+          ref: ${{ env.BRANCH_NAME }}
+
+    # ビルド　& Archive
+      - name: Xcode build Archive
+        run: set -o pipefail &&
+          xcodebuild
+          -configuration SPDev_Release
+          -scheme SpiderPlusDevelopment
+          archive
+          -archivePath .
+          -destination generic/platform=iOS
+          -allowProvisioningUpdates
+
+    # ログファイル作成
+      - name: Make GitLog file
+        id: add_files
+        run: |
+          git log --graph --oneline -100 --date=iso --pretty=format:"[%ad] %an : %s" > git.log
+
+    # Build IPA
+      - name: Build IPA
+        run: set -o pipefail &&        
+          xcodebuild
+          -allowProvisioningUpdates
+          -exportArchive 
+          -archivePath ../SPIDERPLUS-ipad.xcarchive 
+          -exportOptionsPlist ./tools/ExportOptions/develop/ExportOptions.plist
+          -exportPath . 
+
+      - name: getVersion & mkdir move
+        id: getVersion
+        run: |
+          mv ${{ env.Product_IPA_NAME }} ${{ env.IPA_NAME }}
+          CFBundleVersion=`xcodebuild -showBuildSettings -scheme SpiderPlusDevelopment | grep "MARKETING_VERSION" | sed 's/[ ]*MARKETING_VERSION = //'`
+          EXPORT_DIR="$CFBundleVersion"
+          mkdir $EXPORT_DIR
+          mv git.log $EXPORT_DIR
+          mv "${{ env.IPA_NAME }}" $EXPORT_DIR
+          TEMPLATE_PATH="tools/export_template/SpiderPlusDev.plist"
+          if [ "${{ env.BRANCH_NAME }}" = "develop" ]; then
+            echo "develop select"
+          	cat $TEMPLATE_PATH | sed "s/__VERSION__/$CFBundleVersion/g"  | sed "s/bot/bot_develop\/ipad/g" > SpiderPlusDev.plist
+            mv SpiderPlusDev.plist $EXPORT_DIR
+            # scpのメソッド本番用
+            scp -O -P 56547 -pr $EXPORT_DIR kf@demo.spider-net.jp:/home/kf/app/web/app/ipa/bot_develop/ipad/
+          elif [[ "${{ env.BRANCH_NAME }}" = feature/* ]]; then
+            echo "feature select"
+            # featureブランチのときの処理
+            # 現在のブランチ名を取得
+            current_branch=$(git rev-parse --abbrev-ref HEAD)
+            # ブランチ名の記号をアンダースコアに置換
+            no_slach_current_branch=$(echo "$current_branch" | sed 's/[^a-zA-Z0-9]/_/g')
+            mkdir -p $EXPORT_DIR/$no_slach_current_branch
+            # plistのテンプレートファイルでipaファイルpathの修正
+            cat $TEMPLATE_PATH | sed "s/bot\/\_\_VERSION\_\_/bot_feature\/ipad\/$CFBundleVersion\/$no_slach_current_branch/g" > SpiderPlusDev.plist
+            mv SpiderPlusDev.plist $EXPORT_DIR/$no_slach_current_branch
+            # ipaファイルとgit.logファイルもpath移動
+            mv $EXPORT_DIR/"${{ env.IPA_NAME }}" $EXPORT_DIR/$no_slach_current_branch
+            mv $EXPORT_DIR/git.log $EXPORT_DIR/$no_slach_current_branch
+            # オリジナルのブランチ名をテキスト保存
+            echo "$current_branch" > $EXPORT_DIR/$no_slach_current_branch/current_branch_name.txt
+            # scpのメソッド本番用
+            scp -O -P 56547 -pr $EXPORT_DIR kf@demo.spider-net.jp:/home/kf/app/web/app/ipa/bot_feature/ipad/
+          elif [ "${{ env.BRANCH_NAME }}" = "release" ]; then
+            echo "release branch select"
+            cat $TEMPLATE_PATH | sed "s/__VERSION__/$CFBundleVersion/g" > SpiderPlusDev.plist
+            mv "SpiderPlusDev.plist" $EXPORT_DIR    
+            # scpのメソッド本番用
+            scp -O -P 56547 -pr $EXPORT_DIR kf@demo.spider-net.jp:/home/kf/app/web/app/ipa/bot/
+          fi
+          echo "ENV_RESULT=success" >> $GITHUB_ENV
+
+      - name: Slack Notification
+        if: ${{ always() }}
+        uses: ./.github/actions/notify-to-slack
+        with:
+          slack_webhook_url: ${{ secrets.SLACK_WEBHOOK_TO_N10N_IOS_SP }}
+          status: '${{ env.ENV_RESULT }}'
+

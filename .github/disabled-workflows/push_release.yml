@@ -1,0 +1,137 @@
+# releaseブランチへのプッシュで起動
+
+name: Push Release
+
+on:
+  push:
+    branches:
+      - release
+
+jobs:
+
+  make_pr:
+    runs-on: ubuntu-latest
+
+    env:
+      TZ: 'Asia/Tokyo'
+
+    steps:
+
+    # iPadリポジトリをチェックアウト
+    - uses: actions/checkout@v2
+      with:
+        ref: release
+
+    # プルリクエスト作成：release → develop
+    - uses: repo-sync/pull-request@v2.2
+      id: make_pr
+      with:
+        github_token: ${{ secrets.CI_PAT }}
+        pr_title: 'Merge Release'
+        source_branch: "release"
+        destination_branch: "develop"
+
+    # Slack通知
+    - uses: 8398a7/action-slack@v3.0.3
+      with:
+        status: ${{ job.status }}
+        text: "プルリクエストが作成されました。\n${{ steps.make_pr.outputs.pr_url }}"
+        channel: '#cicd'
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      if: steps.make_pr.outputs.pr_url != ''
+
+
+  build:
+    runs-on: macos-latest
+
+    env:
+      TZ: 'Asia/Tokyo'
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+    steps:
+
+    # iPadリポジトリをチェックアウト
+    - uses: actions/checkout@v2
+      with:
+        ref: release
+        path: ipad
+        fetch-depth: 0
+
+    # FastlaneFilesリポジトリをチェックアウト
+    - uses: actions/checkout@v2
+      with:
+        repository: regolith-inc/tool-fastlane
+        token: ${{ secrets.CI_PAT }}
+        path: fastlane
+
+    # AppBinariesリポジトリをチェックアウト
+    - uses: actions/checkout@v2
+      with:
+        repository: regolith-inc/SPIDERPLUS-app_binaries
+        token: ${{ secrets.CI_PAT }}
+        path: binaries
+
+    # 証明書を復号化
+    - name: Decode Cert
+      run: |
+        echo "${{ secrets.DEV_P12 }}" > cert_develop.p12.txt
+        base64 --decode cert_develop.p12.txt > ipad/cert_develop.p12
+
+    # プロビジョニングプロファイルを復号化
+    - name: Decode Provisioning Profile
+      run: |
+        echo "${{ secrets.DEV_PROVISIONING_1 }}${{ secrets.DEV_PROVISIONING_2 }}${{ secrets.DEV_PROVISIONING_3 }}" > develop_mobileprovision.txt
+        base64 --decode develop_mobileprovision.txt > ipad/develop.mobileprovision
+
+    # Fastlane関連ファイルをiPadディレクトリにコピー
+    - name: Copy Fastlane Files
+      run: cp -rf fastlane/* ipad/
+
+    # Fastlaneコマンド実行（アーカイブ）
+    - name: Run Fastlane
+      env:
+        KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        CERT_PASSWORD: ${{ secrets.CERT_PASSWORD }}
+      run: |
+        cd ipad
+        fastlane ios beta
+        cd ..
+
+    # IPAファイル、ログファイル追加
+    - name: Add Files
+      id: add_files
+      run: |
+        cd ipad
+        buildVersion=`sed -n '/CURRENT_PROJECT_VERSION/{s/CURRENT_PROJECT_VERSION = //;s/;//;s/^[[:space:]]*//;p;q;}' ./SpiderPlus.xcodeproj/project.pbxproj`
+        mv ./Build/SpiderPlus.ipa ../binaries/iPad/release/${buildVersion}.ipa
+        echo "# vim: syntax=ruby" >../binaries/iPad/release/${buildVersion}.loghead
+        echo "" >>../binaries/iPad/release/${buildVersion}.loghead
+        git log --name-status -n 50 >>../binaries/iPad/release/${buildVersion}.loghead
+        cd ../binaries
+        git config --global user.email a-ito@regolith-inc.jp
+        git config --global user.name a-ito-regolith
+        git add .
+        git commit -a -m "Add Binary [iPad/release/${buildVersion}]"
+        git push origin HEAD:master
+        echo "::set-output name=binary_url::https://github.com/regolith-inc/SPIDERPLUS-app_binaries/blob/master/iPad/release/${buildVersion}.ipa"
+
+    # Slack通知（成功）
+    - uses: 8398a7/action-slack@v3.0.3
+      with:
+        status: ${{ job.status }}
+        text: "アプリバイナリが追加されました。\n${{ steps.add_files.outputs.binary_url }}"
+        channel: '#cicd'
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      if: steps.add_files.outputs.binary_url != ''
+
+    # Slack通知（失敗）
+    - uses: 8398a7/action-slack@v3.0.3
+      with:
+        status: ${{ job.status }}
+        text: "ビルドが失敗しました。"
+        channel: '#cicd'
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      if: failure()

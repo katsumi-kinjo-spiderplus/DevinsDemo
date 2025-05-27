@@ -1,0 +1,84 @@
+# スプシ(GAS)からiPadのリリース内容テキストをPOSTして特定ブランチ向けPR作成
+name: createPR_iPad_ReleaseNotes
+
+on:
+  repository_dispatch:
+    types: createPR_iPad_ReleaseNotes
+
+jobs:
+  createPullRequest:
+    runs-on: self-hosted
+    env:
+      RELEASE_NOTES: ${{ github.event.client_payload.release_notes }}
+      RELEASE_NOTES_VI: ${{ github.event.client_payload.release_notes_vi }}
+      RELEASE_NOTES_EnUS: ${{ github.event.client_payload.release_notes_EnUS }}
+      LINK_URL: ${{ github.event.client_payload.linkUrl}}
+      # client_payload.branchNameのパラメータ無い時はreleaseブランチでチェックアウト
+      BRANCH: ${{ github.event.client_payload.branchName || 'release' }}
+    steps:
+      # releaseブランチのチェックアウト
+      - uses: actions/checkout@v4
+        with:
+         ref: ${{ env.BRANCH }} 
+         
+      - name: Print client payload
+        run: |
+          echo "release_notes jp: ${{ env.RELEASE_NOTES }}"
+          echo "release_notes vi: ${{ env.RELEASE_NOTES_VI }}"
+          echo "release_notes en_us: ${{ env.RELEASE_NOTES_EnUS }}"
+          echo "linkUrl: ${{ env.LINK_URL }}"
+          echo "branchName: ${{ env.BRANCH }}"
+
+      - name: Make changes to pull request
+        run: |
+          # 日本語リリースノート内容をfastlaneのrelease_notes.txtに反映
+          cat << EOF > fastlane/metadata/ja/release_notes.txt 
+          ${{ env.RELEASE_NOTES }}
+          EOF
+          # ベトナム語リリースノート内容をfastlaneのrelease_notes.txtに反映
+          cat << EOF > fastlane/metadata/vi/release_notes.txt
+          ${{ env.RELEASE_NOTES_VI }}
+          EOF
+          # 英語リリースノート内容をfastlaneのrelease_notes.txtに反映
+          cat << EOF > fastlane/metadata/en-US/release_notes.txt
+          ${{ env.RELEASE_NOTES_EnUS }}
+          EOF
+
+      - name: Set date in environment variable
+        run: echo "CURRENT_DATE=$(date +'%Y年%m月%d日')" >> $GITHUB_ENV
+
+      - name: Create Pull Request to release branch
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.PAT }}
+          commit-message: "[update] 日本語、英語、ベトナム語のリリースノート内容更新"
+          committer: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>
+          author: ${{ github.actor }} <${{ github.actor_id }}+${{ github.actor }}@users.noreply.github.com>
+          signoff: false
+          branch: update_metadata
+          delete-branch: true
+          title: '[${{ env.CURRENT_DATE }}][iPad] AppStoreConnectのリリースノート内容更新'
+          body: |            
+            Apple Store Connectに登録する以下のデータを変更した
+            - リリースノート
+              - 日本語
+            ```           
+            ${{ env.RELEASE_NOTES }} 
+            ```
+              - ベトナム語
+            ```
+            ${{ env.RELEASE_NOTES_VI }}
+            ```
+              - 英語
+            ```
+            ${{ env.RELEASE_NOTES_EnUS }}
+            ```
+            ${{ env.LINK_URL }}
+          labels: |
+            automated pr
+# レビュワー付与したい場合に付ける
+#          reviewers: peter-evans
+          team-reviewers: |
+            ios
+          draft: false
+          base: ${{ env.BRANCH }} 

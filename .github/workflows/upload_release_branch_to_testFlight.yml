@@ -1,0 +1,35 @@
+name: 毎月1日午前9時にreleaseブランチの開発版アプリTestFlightアップロード 
+on:
+  # 手動実行可能にする
+  workflow_dispatch:
+  # 毎月1日の9時にタイマー実行
+  # cronはUTC時間で実行されるので、JST(+9:00)との差を考慮して9-9=0で計算
+  schedule:
+    - cron: '0 0 1 * *'
+
+jobs:
+  setChangelog:
+    runs-on: ubuntu-latest
+    outputs:
+      changelog: ${{ steps.setChangelog.outputs.changelog }}
+    steps:
+      # リポジトリのチェックアウト
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: "release"
+      # テスト内容のセット
+      - name: Set changelog
+        id: setChangelog
+        run: echo "changelog=$(git log --pretty=format:'%s' --grep=バージョン -n 1 -- ./XcodeGen/Targets/SpiderPlus.yml)" >> $GITHUB_OUTPUT
+
+  uploadTestFlight:
+    needs: setChangelog
+    uses: ./.github/workflows/upload_dev_testflight.yml
+    with:
+      ref: "release"
+      testers: ${{ vars.DEFAULT_TESTERS }}
+      changelog: ${{ needs.setChangelog.outputs.changelog }}
+    # reuse workflowでもアクションsecretsを使えるようにする
+    secrets: inherit

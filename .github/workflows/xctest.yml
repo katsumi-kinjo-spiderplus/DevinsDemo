@@ -1,0 +1,10 @@
+name: XCTest SPIDERPLUS-iPad (self-hosted)
+on: 
+  workflow_dispatch:
+  pull_request:
+    branches: [ release, develop, feature/**/*, hotfix/* ]
+
+jobs:
+  # チェックアウトしてユニット(XCTest)テスト実行
+  ReusableXCTest:
+    uses: ./.github/workflows/reusableXCTest.yml

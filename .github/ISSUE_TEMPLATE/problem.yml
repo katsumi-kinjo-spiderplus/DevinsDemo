@@ -1,0 +1,86 @@
+name: "issues"
+description: "不具合の報告用テンプレート"
+title: "[問題] タイトルを記入"
+labels: ["起因：Bug", "デバイス：iPad"]
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: "## 発信元\nここに発信元を記載する。\n例）テストチーム、働くDB(リンク)、カスタマーサポート（不具合共有シート）etc"
+
+  - type: input
+    id: source
+    attributes:
+      label: "発信元"
+      description: "発信元を記入してください。"
+      placeholder: "例）テストチーム、働くDB(リンク)、カスタマーサポート（不具合共有シート）etc"
+
+  - type: input
+    id: db_link
+    attributes:
+      label: "働くDBのリンク"
+      description: "[問い合わせコードを記入](リンク)"
+      placeholder: "リンクを記入"
+
+  - type: textarea
+    id: phenomenon
+    attributes:
+      label: "事象（結果）"
+      description: "ここに不具合の事象を記載する。"
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: "問題点"
+      description: "ここにユーザーの困りごと（その事象が発生することでユーザーは何が困るのか）を記載する。"
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: "再現手順"
+      description: "ここに再現手順を記載する。"
+
+  - type: input
+    id: reproducibility
+    attributes:
+      label: "再現率（再現性）"
+      description: "ここに再現率を記載する。\n例）4/5（5回実施して4回発生）など"
+      placeholder: "例）4/5（5回実施して4回発生）など"
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: "期待値"
+      description: "ここに期待値を記載する。どうすべきか検討が必要な場合も検討すべき内容を記載する。"
+
+  - type: textarea
+    id: workaround
+    attributes:
+      label: "回避策"
+      description: "不具合の回避策があれば記載する。ない場合は「ない」と記載する。"
+
+  - type: textarea
+    id: priority
+    attributes:
+      label: "優先度判断基準"
+      description: "[優先度決定さん](https://docs.google.com/spreadsheets/d/1BIIIpq5LsFnxw9Swyhe-8LN3mcU8dqs67B-RSigKfhA/edit?usp=sharing)から本issueの優先度、マイルストーンを決定し、issueに反映させてください。\n※優先度/マイルストーンがすでに指定済みの場合は、上記のシートの利用は不要です。\n\nここに優先度決定さんで表示された判断根拠をコピー＆ペースト\n\n※発生元による基準優先度、回避策の重みを考慮して優先度の最終判断を行う。"
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: "発生環境"
+      description: "### iOSバージョン\n\n### 端末機種"
+
+  - type: input
+    id: version
+    attributes:
+      label: "発生バージョン（サポートが確認していたり、していなかったり）"
+      description: "AppStore版か？開発版のみか？も記載する。"
+      placeholder: "例）AppStore版、開発版"
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: "備考"
+      description: "補足があればここに記載する。\n起票時に起票者が原因のソースコードを記述する場合はここに記載する。"

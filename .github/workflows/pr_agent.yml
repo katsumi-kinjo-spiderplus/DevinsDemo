@@ -1,0 +1,38 @@
+name: pr-agent
+
+on:
+  pull_request:
+    branches: [ release, 'feature/*', 'hotfix/*', 'feature/*/*']
+    types: [opened, reopened, synchronize]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  pr_agent:
+    runs-on: ubuntu-latest
+    #runs-on: self-hosted
+    name: Run PR Agent
+    steps:
+      - id: pr-agent
+        uses: Codium-ai/pr-agent@main
+        env:
+          OPENAI_KEY: ${{ secrets.ORG_OPENAI_KEY }}
+          GITHUB_TOKEN: ${{ secrets.PAT }}
+          github_action.auto_describe: true
+          github_action.auto_review: true
+          github_action.auto_improve: true
+          github_action_config.pr_actions: '["opened", "reopened", "synchronize"]'
+          # PR Agentのauto_describe機能をPRコメントとして追加
+          PR_DESCRIPTION.PUBLISH_DESCRIPTION_AS_COMMENT: true
+          # PR AgentによるPR_DESCRIPTIONに元のユーザデスクリプションを組入するか(default: true)
+          PR_DESCRIPTION.add_original_user_description: false
+          PR_DESCRIPTION.EXTRA_INSTRUCTIONS: '日本語で記述してください。'
+          # AIによるPR_DESCRIPTIONタイトル生成の有効化
+          PR_DESCRIPTION.generate_ai_title: true
+          PR_DESCRIPTION.inline_file_summary: true
+          PR_REVIEWER.EXTRA_INSTRUCTIONS: >-
+            日本語で回答してください。
+            commitlint パターンの接頭辞を含む必要があります。
+          PR_CODE_SUGGESTIONS.EXTRA_INSTRUCTIONS: '日本語で記述してください。'
+          CONFIG.MODEL: ${{ vars.ORG_OPENAI_MODEL }}

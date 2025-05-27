@@ -1,0 +1,88 @@
+name: iPadアプリログの取得(開発環境)
+run-name: iPadアプリログの取得[${{ inputs.server_name }}.spider-net.jp-${{inputs.login_id}}-${{inputs.date}}*.zip]
+
+on:
+  workflow_dispatch:
+    inputs:
+      login_id:
+        type: string
+        description: ログインID
+        required: true
+      server_name:
+        type: string
+        description: サーバー(sales、man、sb01など)
+        required: true
+      date:
+        type: string
+        description: 日時(形式：yyyy-MM-dd_HHmm)
+        required: true
+
+jobs:
+  get_app_log:
+    # MacStudioマシンでselfhostランナー実行するための設定
+    runs-on: [self-hosted, MacStudio]
+    timeout-minutes: 60
+
+    steps:
+      - name: Get App Log
+        env:
+          SCRIPT_DIR: ~/sp/tools/appLog
+          PATH_GD: /開発共有資料/01_SPIDERPLUS/02_リリース前テスト/アプリログ置き場
+          URL_GD: https://drive.google.com/drive/folders/1CYU7AyCflAZVnwRE65O9HZaaeLJ3bd_9
+        run: |
+          # 入力チェック
+          if [[ "${{ inputs.server_name }}" =~ "spider-net" ]]; then
+            echo "エラー：サーバーには「.spider-net.jp」は含めないでください。"
+            echo "終了"
+            exit
+          fi
+          if [[ "${{inputs.date}}" =~ ^20\d\d-[0-1]\d-[0-3]\d_[0-2]\d[0-5]\d$ ]]; then
+            echo "エラー：日付の形式が間違っています。(形式：yyyy-MM-dd_HHmm)"
+            echo "終了"
+            exit
+          fi
+
+          # SSH接続の設定ファイルの上書き
+          cp -f ~/.ssh/config_tmp ~/.ssh/config
+
+          SERVER_LOG_PATH=/home/kf/app/var/spool/log/${{ inputs.server_name }}.spider-net.jp-${{inputs.login_id}}-${{inputs.date}}*.zip
+
+          # サーバー側のログファイルの存在チェック
+          FILE_EXISTS=$(echo `ssh ${{ inputs.server_name }} -t "test -f ${SERVER_LOG_PATH}";echo $?`)
+          if [[ ${FILE_EXISTS} != "0" ]]; then
+            echo "エラー：サーバーにログファイルが存在しません。条件を見直してください。"
+            echo "-----------"
+            echo "サーバー：${{ inputs.server_name }}"
+            echo "ログインID：${{inputs.login_id}}"
+            echo "日時：${{inputs.date}}"
+            echo "-----------"
+            echo "終了"
+            exit
+          fi
+
+          # 作業用ディレクトリの作成
+          LOG_DIR=${{env.SCRIPT_DIR}}/$(date +"%Y-%m-%d_%H%M%S")
+          mkdir -p $LOG_DIR
+          # ログの取得
+          scp ${{ inputs.server_name }}:${SERVER_LOG_PATH} ${LOG_DIR}
+
+          if [ -z "$(ls $LOG_DIR)" ]; then
+            echo "エラー：ログファイルが取得できませんでした。検索条件を見直して下さい。"
+            echo "-----------"
+            echo "サーバー：${{ inputs.server_name }}"
+            echo "ログインID：${{inputs.login_id}}"
+            echo "日時：${{inputs.date}}"
+            echo "-----------"
+            echo "終了"
+            rm -rf $LOG_DIR
+            exit
+          fi
+
+          # ログファイルのGoogleDriveへの送信
+          echo "GoogleDriveにファイルを転送"
+          echo "転送先：${{env.PATH_GD}}"
+          echo "${{env.URL_GD}}"
+          rclone copy --progress ${LOG_DIR} gd:${{env.PATH_GD}}
+
+          # 送信後のファイル削除
+          rm -rf $LOG_DIR

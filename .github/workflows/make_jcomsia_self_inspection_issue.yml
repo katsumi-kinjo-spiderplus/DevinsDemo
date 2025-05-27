@@ -1,0 +1,81 @@
+name: 毎月第３水曜日19時にj-comsia自主検査issue作成するワークフロー
+on:
+  # 毎月第３週の15-21日の夜19時に実行する。(cronで曜日指定可能だがor条件になるためここでは指定しない) 
+  # cronはUTC時間で実行されるので、JST(+9:00)との差を考慮して19-9=10で計算
+  schedule:
+    - cron: '0 10 15-21 * *'
+  workflow_dispatch:
+  
+jobs:
+  create_issue:
+    name: 実行日が水曜日であればj-comsiaの自主検査依頼用issue生成
+    runs-on: ubuntu-latest
+    env:
+      SP_iPad_bunldeId: jp.cobweb.spider
+      SP_iPhone_bunldeId: jp.cobweb.spideriphone
+    outputs:
+      ipad_version: ${{ steps.get_app_version.outputs.ipad_version }}
+      iphone_version: ${{ steps.get_app_version.outputs.iphone_version }}
+      issue-number: ${{ steps.create-issue.outputs.issue-number }}
+    permissions:
+      issues: write
+    steps:
+      - name: 水曜日であればiPad, iPhoneアプリのバージョン情報取得し変数パラメータにセット
+        id: get_app_version
+        run: |
+          if [ `date +'%w'` -eq 3 ]; then
+             echo "日付曜日が水曜です"
+             ipad_version=`curl -H 'Cache-Control: no-cache, no-store' https://itunes.apple.com/lookup?bundleId=${{ env.SP_iPad_bunldeId }} | jq -r ".results[].version"`
+             echo "$ipad_version"
+             echo "::set-output name=ipad_version::${ipad_version}"
+             iphone_version=`curl -H 'Cache-Control: no-cache, no-store' https://itunes.apple.com/lookup?bundleId=${{ env.SP_iPhone_bunldeId }} | jq -r ".results[].version"`
+             echo "$iphone_version"
+             echo "::set-output name=iphone_version::${iphone_version}"
+             exit 0
+          else
+            echo "Day didn't match"
+            # 条件に合わないときは処理抜ける
+            exit 1
+          fi
+        continue-on-error: true
+
+      - name: j-comsiaの自主検査依頼用issue生成
+        id: create-issue
+        if: steps.get_app_version.outcome == 'success'
+        uses: imjohnbo/issue-bot@3daae12aa54d38685d7ff8459fc8a2aee8cea98b
+        with:
+          labels: "J-COMSIA"
+          title: "[J-COMSIA][リリース定例]自主検査"
+          body: |
+            ### 概要
+            写真の改ざんチェックの自主検査を行い、書類を作成し、J-COMSIAへ提出する。
+            ### 内容
+            AppStoreよりSpiderPlus(iPad, iPhone)の最新版をダウンロードし、次の２項目の実施をお願いします。
+            iPad：v.${{steps.get_app_version.outputs.ipad_version}}
+            iPhone：v.${{steps.get_app_version.outputs.iphone_version}}
+            
+            1. 事前準備
+            2. 自主検査の実施
+            
+            https://docs.google.com/spreadsheets/d/1c4qUZzSk7_eTLw_HBkB4K04wUV_1oUEeFumrXwnScWc/edit#gid=0
+
+          pinned: false
+          close-previous: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: Slack Notification
+        if: steps.get_app_version.outcome == 'success'
+        uses: tokorom/action-slack-incoming-webhook@main
+        env:
+          INCOMING_WEBHOOK_URL: ${{ secrets.SLACK_INCOMING_WEBHOOK_URL }}
+        with:
+           text: | 
+              j-comsia自主検査用issueが発行されました
+              
+              iPad：v.${{steps.get_app_version.outputs.ipad_version}}
+              iPhone：v.${{steps.get_app_version.outputs.iphone_version}}
+              
+              issueURL: ${{ github.event.repository.html_url }}/issues/${{ steps.create-issue.outputs.issue-number }}
+              
+              GitHubActionRunURL: ${{ github.event.repository.html_url }}/actions/runs/${{ github.run_id }}

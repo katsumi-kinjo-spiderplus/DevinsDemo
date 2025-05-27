@@ -1,0 +1,100 @@
+name: "requests"
+description: "要望の報告用テンプレート"
+title: "[要望] タイトルを記入"
+labels: ["起因：要望", "デバイス：iPad"]
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: "## 概要\nここに概要を記載する。"
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: "概要"
+      description: "ここに概要を記載する。"
+
+  - type: markdown
+    attributes:
+      value: "## 経緯\nここに経緯を記載する。"
+
+  - type: textarea
+    id: background
+    attributes:
+      label: "経緯"
+      description: "ここに経緯を記載する。"
+
+  - type: markdown
+    attributes:
+      value: "## 要望\nここに働くDBの内容を記載する。"
+
+  - type: textarea
+    id: request
+    attributes:
+      label: "要望"
+      description: "ここに働くDBの内容を記載する。"
+
+  - type: markdown
+    attributes:
+      value: "## 見積について\nここに注意事項があれば記載する。"
+
+  - type: textarea
+    id: estimation
+    attributes:
+      label: "見積について"
+      description: "ここに注意事項があれば記載する。"
+
+  - type: markdown
+    attributes:
+      value: "## 働くDB\n* [問い合わせコードを記入](リンク)\n* 問合せ者名：\n* 登録者名：\n* 発生日：\n* 緊急度："
+
+  - type: input
+    id: db_link
+    attributes:
+      label: "働くDBのリンク"
+      description: "[問い合わせコードを記入](リンク)"
+      placeholder: "リンクを記入"
+
+  - type: input
+    id: requester_name
+    attributes:
+      label: "問合せ者名"
+      description: "問合せ者名を記入してください。"
+      placeholder: "問合せ者名"
+
+  - type: input
+    id: registrant_name
+    attributes:
+      label: "登録者名"
+      description: "登録者名を記入してください。"
+      placeholder: "登録者名"
+
+  - type: input
+    id: occurrence_date
+    attributes:
+      label: "発生日"
+      description: "発生日を記入してください。"
+      placeholder: "発生日"
+
+  - type: input
+    id: urgency
+    attributes:
+      label: "緊急度"
+      description: "緊急度を記入してください。"
+      placeholder: "緊急度"
+
+  - type: markdown
+    attributes:
+      value: "## チャット\n[見積依頼Slack](Slackチャンネル「#pj_開発g見積依頼」の該当メッセージへのリンク)"
+
+  - type: input
+    id: slack_link
+    attributes:
+      label: "チャットリンク"
+      description: "Slackチャンネル「#pj_開発g見積依頼」の該当メッセージへのリンクを記入してください。"
+      placeholder: "Slackリンク"
+
+  - type: markdown
+    attributes:
+      value: "## 備考"

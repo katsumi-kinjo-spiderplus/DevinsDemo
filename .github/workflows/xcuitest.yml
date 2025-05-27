@@ -1,0 +1,240 @@
+name: 毎日23時にreleaseブランチのXCUITest実行するワークフロー
+on:
+  # 毎日23時にタイマー実行
+  # cronはUTC時間で実行されるので、JST(+9:00)との差を考慮して23-9=14で計算
+  schedule:
+    - cron: '0 14 * * *'
+  workflow_dispatch:
+   inputs:
+      ref:
+        description: チェックアウト対象ブランチ名
+        type: string
+        required: true
+        default: 'release'
+
+env:
+  # inputs.refが空欄のときはreleaseブランチが入る
+  # schedule実行時もreleaseブランチで実行される 
+  branchName: ${{ inputs.ref || 'release' }}
+
+jobs:
+  XCUITest:
+    # MacStudioマシンでselfhostランナー実行するための設定
+    runs-on: [self-hosted, MacStudio]
+    timeout-minutes: 60
+    strategy:
+      max-parallel: 1
+      matrix:
+        # iPadOSのサポートメジャーバージョン配列
+        iosVer: [18, 17, 16]
+    env:
+      MINT_PATH: mint/lib
+      MINT_LINK_PATH: mint/bin
+      CodeblocksStr: \`\`\`
+      AppFileName: "SpiderPlus.app"
+      SLACK_APP_BOT_TOKEN: ${{secrets.SLACK_APP_BOT_TOKEN_FOR_XCUITEST}}
+      # slackchannel: n10n_ios_sp
+      Channnel: C03UDEFH11S
+      GitHubActionRunURL: ${{ github.event.repository.html_url }}/actions/runs/${{ github.run_id }}
+    steps:
+      # リポジトリのチェックアウト
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+         ref: ${{ env.branchName }}
+         fetch-depth: 0
+
+      # プロジェクトファイルの生成
+      - name: Generate SpiderPlus.xcodeproj
+        uses: ./.github/actions/generate-xcodeproj
+        with:
+          ref: ${{ env.branchName }}
+
+      # TestResultsの残骸があれば削除
+      - name: Remove TestResults
+        run: |
+          if [ -e TestResults ]; then
+           rm TestResults
+          fi
+          if [ -d TestResults.xcresult ]; then
+           rm -rf TestResults.xcresult 
+          fi
+
+      - name: uninstall App From Device
+        run: |
+         # TODO: 実機iPadテストの場合は対応していないため導入時に別途対応
+         # iPadシミュレータのUDID
+         SIMULATOR_UDID=""
+         if [ "${{ matrix.iosVer }}" = "18" ]; then
+          SIMULATOR_UDID='9FEA7978-478A-4B0D-88DA-1379526A7425'
+         elif [[ "${{ matrix.iosVer }}" = "17" ]]; then
+          SIMULATOR_UDID='DAF7839D-F31C-4582-ACEB-6A453822E818'
+         elif [[ "${{ matrix.iosVer }}" = "16" ]]; then
+          SIMULATOR_UDID='8A3CDDAD-F26C-4A1E-9266-25E0C07AAF29'
+         fi
+
+         # アプリのバンドルID
+         PRODUCT_BUNDLE_IDENTIFIER="jp.co.spiderplus.spdev.ipad"
+         # 起動済みのデバイスをチェック
+         if xcrun simctl list devices | grep "$SIMULATOR_UDID" | grep "Booted" > /dev/null; then
+            echo "シミュレータは既に起動しています"
+         else
+            echo "シミュレータを起動します..."
+            xcrun simctl boot "$SIMULATOR_UDID"
+            # 起動状態を確認してから実行
+            until xcrun simctl list devices | grep "$SIMULATOR_UDID" | grep -q "Booted"; do
+                sleep 1
+            done
+            echo "シミュレータが起動しました"
+         fi
+
+         open -a Simulator
+         # アプリ削除処理
+         xcrun simctl uninstall $SIMULATOR_UDID $PRODUCT_BUNDLE_IDENTIFIER
+
+      # x86_64のみでしかビルドできないフレームワークを利用しているためx86_64アーキテクチャでクリーンビルド
+      - name: x86_64によるクリーンビルド
+        run:
+          arch -x86_64 xcodebuild
+          -configuration SPDev_Debug
+          -scheme SpiderPlusDevelopment
+          clean build
+
+      # UIテストの実行(iPadOS18.0: iPad Air (5th generation))
+      - name: Xcode UI Test iPadOS18
+        if: ${{ matrix.iosVer == 18 }}
+        run:
+          xcodebuild ARCHS=x86_64 test
+          -arch=x86_64
+          -configuration SPDev_Debug
+          -scheme SpiderPlusDevelopment
+          -destination 'id=9FEA7978-478A-4B0D-88DA-1379526A7425'
+          -testLanguage ja
+          -parallel-testing-enabled NO
+          -only-testing SpiderPlusUITests/XCUITestsManager/test_メインシナリオ
+          loginID=test3
+          -resultBundlePath TestResults
+
+      # UIテストの実行(iPadOS17.2: iPad Pro (12.9-inch) (6th generation))
+      - name: Xcode UI Test iPadOS17
+        if: ${{ matrix.iosVer == 17 }}
+        run:
+          xcodebuild ARCHS=x86_64 test
+          -arch=x86_64
+          -configuration SPDev_Debug
+          -scheme SpiderPlusDevelopment
+          -destination 'id=DAF7839D-F31C-4582-ACEB-6A453822E818'
+          -testLanguage ja
+          -parallel-testing-enabled NO
+          -only-testing SpiderPlusUITests/XCUITestsManager/test_メインシナリオ
+          -resultBundlePath TestResults
+
+      # UIテストの実行(iPadOS16.4: iPad (10th generation))
+      - name: Xcode UI Test iPadOS16
+        if: ${{ matrix.iosVer == 16 }}
+        run:
+         xcodebuild ARCHS=x86_64 test
+          -arch=x86_64
+          -configuration SPDev_Debug
+          -scheme SpiderPlusDevelopment 
+          -destination 'id=8A3CDDAD-F26C-4A1E-9266-25E0C07AAF29'
+          -testLanguage ja
+          -parallel-testing-enabled NO
+          -only-testing SpiderPlusUITests/XCUITestsManager/test_メインシナリオ
+          loginID=test2
+          -resultBundlePath TestResults
+
+      - name: XCUITest resultCheck
+        id: resultCheck
+        # エラーでも処理を継続する
+        continue-on-error: true
+        run: |
+         if [[ $? == 0 ]]; then
+          exit 0
+         else
+          exit 1
+         fi
+
+      # ツールがXcode16対応していないためXcode15.2で実行
+      - uses: kishikawakatsumi/xcresulttool@v1
+        env:
+            DEVELOPER_DIR: /Applications/Xcode_15.2.app
+        if: success() || failure()
+        with:
+         path: TestResults.xcresult
+          # ^ This is important because the action will be run
+          # even if the test fails in the previous step.
+          # Title for the check results.
+          #
+          # Default: 'Xcode test results'
+          # title:
+
+          # Whether to show the details of passed tests;
+          # if false, only failed tests will be reported in detail section.
+          #
+          # Default: true
+#         show-passed-tests: false
+
+          # Whether to show code coverage (if coverage data exists).
+          #
+          # Default: true
+         show-code-coverage: false
+
+          # Whether to upload the xcresult bundles.
+          #
+          # Default: true
+         upload-bundles: false
+         
+      - name: コードカバレッジデータをPRコメント用加工してファイル出力
+        run: |
+         echo "## coverage summary" >> coverage.log
+         echo "${{ env.CodeblocksStr }}" >> coverage.log
+         xcrun xccov view --report TestResults.xcresult --only-targets > tmp_coverage.log
+         head -n 2 tmp_coverage.log >> coverage.log
+         grep ${{ env.AppFileName }} tmp_coverage.log >> coverage.log
+         echo "${{ env.CodeblocksStr }}" >> coverage.log
+
+      - name: Slack通知
+        run: |
+         color="#36a64f"
+         TITLE="XCUITest成功 iPadOS: ${{ matrix.iosVer }}"
+         MESSAGE=""
+         coverage=$(cat coverage.log)
+         if [[ ${{ steps.resultCheck.outcome == 'failure' }} == true ]]; then
+          echo "fail"
+          color="#ff0000"
+          TITLE="XCUITest失敗"
+          MESSAGE="<!channel> XCUITestに失敗しました。"
+         else
+          echo "success"
+         fi
+          
+         curl -XPOST -H "Authorization: Bearer $SLACK_APP_BOT_TOKEN" \
+         -d channel=$Channnel \
+         -d attachments='[
+          {
+           "mrkdwn_in": ["text"],
+           "color": "'"${color}"'",
+           "title": "'"${TITLE}"'",
+           "text": "'"${MESSAGE}"'",
+           "fields": [
+             {
+              "title": "UIテスト対象ブランチ名",
+              "value": "'"${branchName}"'",
+              "short": false
+            },           
+             {
+              "title": "Github Actions URL",
+              "value": "'"${GitHubActionRunURL}"'",
+              "short": false
+            },
+            {
+              "title": "コードカバレッジ",
+              "value": "'"${coverage}"'",
+              "short": false
+            }
+          ],
+          "footer": "'"$(hostname -s)"'",
+          "ts": "'"$(date +%s)"'"
+          }]' \
+          'https://slack.com/api/chat.postMessage'

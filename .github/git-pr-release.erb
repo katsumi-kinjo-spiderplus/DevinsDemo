@@ -1,0 +1,6 @@
+release -> master（AppStore申請用） <%= Time.now %>
+
+## このリリースに含まれる更新内容
+<% pull_requests.each do |pr| -%>
+- #<%=  pr.number %> <%= pr.mention %>
+<% end -%>

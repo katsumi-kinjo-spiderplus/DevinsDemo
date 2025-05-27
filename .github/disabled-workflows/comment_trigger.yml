@@ -1,0 +1,134 @@
+# ISSUEコメントを追加したときに起動
+
+name: Comment Trigger
+
+on:
+  issue_comment:
+    types: [ created ]
+
+jobs:
+
+  prepare:
+    runs-on: ubuntu-latest
+
+    outputs:
+      triggered: ${{ steps.check.outputs.triggered }}
+      head_ref: ${{ steps.get_head_ref.outputs.head_ref }}
+
+    steps:
+
+    # コメントにキーワードが含まれるかを判定
+    - name: Pull Request Comment Trigger
+      id: check
+      uses: Khan/pull-request-comment-trigger@1.0.0
+      with:
+        trigger: 'run beta build'
+
+    # ビルド対象のブランチ名を取得
+    - name: Get Head
+      id: get_head_ref
+      run: |
+        res=$(curl -X GET \
+             -H "Content-Type: application/json" \
+             -H "Authorization: token ${{ secrets.CI_PAT }}" \
+             https://api.github.com/repos/${{ github.repository }}/pulls/${{ github.event.issue.number }})
+        head_ref=$(echo $res | tr -d '[:cntrl:]' | jq -r '.head.ref')
+        echo "::set-output name=head_ref::${head_ref}"
+
+
+  build:
+    needs: prepare
+    runs-on: macos-latest
+
+    env:
+      TZ: 'Asia/Tokyo'
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+    # prepareジョブでの判定結果がtrueのときのみ実行
+    if: needs.prepare.outputs.triggered == 'true'
+    steps:
+
+    # iPadリポジトリをチェックアウト
+    - uses: actions/checkout@v2
+      with:
+        ref: ${{ needs.prepare.outputs.head_ref }}
+        path: ipad
+        fetch-depth: 0
+
+    # FastlaneFilesリポジトリをチェックアウト
+    - uses: actions/checkout@v2
+      with:
+        repository: regolith-inc/tool-fastlane
+        token: ${{ secrets.CI_PAT }}
+        path: fastlane
+
+    # AppBinariesリポジトリをチェックアウト
+    - uses: actions/checkout@v2
+      with:
+        repository: regolith-inc/SPIDERPLUS-app_binaries
+        token: ${{ secrets.CI_PAT }}
+        path: binaries
+
+    # 証明書を復号化
+    - name: Decode Cert
+      run: |
+        echo "${{ secrets.DEV_P12 }}" > cert_develop.p12.txt
+        base64 --decode cert_develop.p12.txt > ipad/cert_develop.p12
+
+    # プロビジョニングプロファイルを復号化
+    - name: Decode Provisioning Profile
+      run: |
+        echo "${{ secrets.DEV_PROVISIONING_1 }}${{ secrets.DEV_PROVISIONING_2 }}${{ secrets.DEV_PROVISIONING_3 }}" > develop_mobileprovision.txt
+        base64 --decode develop_mobileprovision.txt > ipad/develop.mobileprovision
+
+    # Fastlane関連ファイルをiPadディレクトリにコピー
+    - name: Copy Fastlane Files
+      run: cp -rf fastlane/* ipad/
+
+    # Fastlaneコマンド実行（アーカイブ）
+    - name: Run Fastlane
+      env:
+        KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        CERT_PASSWORD: ${{ secrets.CERT_PASSWORD }}
+      run: |
+        cd ipad
+        fastlane ios beta
+        cd ..
+
+    # IPAファイル、ログファイル追加
+    - name: Add Files
+      id: add_files
+      run: |
+        cd ipad
+        branchName=`git symbolic-ref --short HEAD`
+        mv ./Build/SpiderPlus.ipa ../binaries/iPad/other/${branchName}.ipa
+        echo "# vim: syntax=ruby" >../binaries/iPad/other/${branchName}.loghead
+        echo "" >>../binaries/iPad/other/${branchName}.loghead
+        git log --name-status -n 50 >>../binaries/iPad/other/${branchName}.loghead
+        cd ../binaries
+        git config --global user.email a-ito@regolith-inc.jp
+        git config --global user.name a-ito-regolith
+        git add .
+        git commit -a -m "Add Binary [iPad/other/${branchName}]"
+        git push origin HEAD:master
+        echo "::set-output name=binary_url::https://github.com/regolith-inc/SPIDERPLUS-app_binaries/blob/master/iPad/other/${branchName}.ipa"
+
+    # Slack通知（成功）
+    - uses: 8398a7/action-slack@v3.0.3
+      with:
+        status: ${{ job.status }}
+        text: "アプリバイナリが追加されました。\n${{ steps.add_files.outputs.binary_url }}"
+        channel: '#cicd'
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      if: steps.add_files.outputs.binary_url != ''
+
+    # Slack通知（失敗）
+    - uses: 8398a7/action-slack@v3.0.3
+      with:
+        status: ${{ job.status }}
+        text: "ビルドが失敗しました。"
+        channel: '#cicd'
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      if: failure()

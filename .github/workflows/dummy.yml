@@ -1,0 +1,13 @@
+# 動作確認用のダミーのワークフロー
+# 内容を変更したものをmasterへマージしないでください
+name: Dummy for test # 動作確認できなくなるため変更しない
+
+on:
+  workflow_dispatch:
+
+jobs:
+  dummy:
+    if: ${{ false }}
+    runs-on: ubuntu-latest
+    steps:
+      - run: ""
