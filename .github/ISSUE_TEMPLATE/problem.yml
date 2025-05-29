@@ -16,13 +16,6 @@ body:
       description: "発信元を記入してください。"
       placeholder: "例）テストチーム、働くDB(リンク)、カスタマーサポート（不具合共有シート）etc"
 
-  - type: input
-    id: db_link
-    attributes:
-      label: "働くDBのリンク"
-      description: "[問い合わせコードを記入](リンク)"
-      placeholder: "リンクを記入"
-
   - type: textarea
     id: phenomenon
     attributes:
@@ -64,7 +57,6 @@ body:
     id: priority
     attributes:
       label: "優先度判断基準"
-      description: "[優先度決定さん](https://docs.google.com/spreadsheets/d/1BIIIpq5LsFnxw9Swyhe-8LN3mcU8dqs67B-RSigKfhA/edit?usp=sharing)から本issueの優先度、マイルストーンを決定し、issueに反映させてください。\n※優先度/マイルストーンがすでに指定済みの場合は、上記のシートの利用は不要です。\n\nここに優先度決定さんで表示された判断根拠をコピー＆ペースト\n\n※発生元による基準優先度、回避策の重みを考慮して優先度の最終判断を行う。"
 
   - type: textarea
     id: environment
